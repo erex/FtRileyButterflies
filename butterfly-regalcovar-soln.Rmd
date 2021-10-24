@@ -19,7 +19,7 @@ We renew our investigation of the Regal butterfly data now including potential c
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-solution <- FALSE
+solution <- TRUE
 ```
 
 Load necessary packages

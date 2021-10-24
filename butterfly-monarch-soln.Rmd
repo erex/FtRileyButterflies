@@ -19,7 +19,7 @@ This exercises takes a first look at the 2021 Monarch butterfly survey.  We take
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-solution <- FALSE
+solution <- TRUE
 ```
 
 Load the necessary packages
@@ -157,3 +157,24 @@ plotCI(1:4, monhr$dht$individuals$D$Estimate[1:4], li=monhr$dht$individuals$D$lc
 plotCI(1:4+.2, m.pool.hr$dht$individuals$D$Estimate[1:4], li=m.pool.hr$dht$individuals$D$lcl[1:4],
        ui=m.pool.hr$dht$individuals$D$ucl[1:4], add=TRUE, scol="blue", pt.bg = "blue")
 ```
+
+
+
+# Comments
+
+## Spike on the transect
+Note the large proportion of detections in the first meter `r round(100*sum(monarch$distance<=1, na.rm=TRUE)/sum(monarch$distance<=mytrunc, na.rm=TRUE),3)`\% of all detections are in the first meter (the first 1.7% of the sampled strip).  This leads to a spike close to zero, which is difficult to fit.  There are three consequences:
+
+- there is great discrepancy in $\widehat{P_a}$ between the half normal key function and the hazard rate key function
+- the chosen (hazard rate model) predicts detectability falls off precipitously
+  - probability of detecting a butterfly at 7m is roughly 0.5 (for every butterfly detected at 7m, there is another undetected)
+    - in contrast, the half-normal key function predicts the 0.5 detection probability threshold is crossed at ~18m.  Field experience plays a role in assessing which model is most plausible.
+  - this results in $\widehat{P_a}$ being relatively small (`r round(m.pool.hr$ddf$fitted[1],3)`) and a subsequent large estimate of density ($\hat{D}=$ `r round(m.pool.hr$dht$individuals$D$Estimate[5], 3)` $\cdot ha^{-1}$)
+- contrary to the usual situation with line transect data where 25% of the uncertainty in the density estimate is attributable to uncertainty in the detection function, here `r round(100*(as.numeric(summary(m.pool.hr)$ds$average.p.se / summary(m.pool.hr)$ds$average.p))^2/m.pool.hr$dht$individuals$D$cv[5]^2,1)`\% of the uncertainty comes from the detection function.
+
+## Comparison of overall estimates
+
+Bout-specific estimates of density are highly variably, building to a crescendo in the September sample.  Except for the first bout, when <30 detections were made, the CV($\hat{D}$) remain reasonably constant.  
+
+- Combining those bout-specific density estimates into an overall estimate (that takes into account temporal variability) has a large CV($\hat{D}$) (`r round(monhr.ests$Abundance_CV[5],3)`).  
+- The point estimate of $\hat{D}$ for the analysis of the pooled data is similar, but more precise (CV=`r round(m.pool.hr$dht$individuals$D$cv[5],3)`), because temporal variability is not incorporated.

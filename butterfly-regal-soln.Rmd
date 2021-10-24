@@ -19,7 +19,7 @@ This exercises takes a first look at the 2021 Regal butterfly survey.  We take a
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-solution <- FALSE
+solution <- TRUE
 ```
 
 Load necessary packages
@@ -159,3 +159,18 @@ AIC should provide an answer to this
 ```{r aic, eval=solution}
 kable(summarize_ds_models(m.pool.hn, m.pool.hr, monhn, monhr)[,2:7], digits=4, row.names=FALSE)
 ```
+
+# Comments
+
+What conclusions can we draw from basic analysis of the regal data set?
+
+## Spike on the transect
+Note the large proportion of detections in the first meter `r round(100*sum(regal$distance<=1, na.rm=TRUE)/sum(regal$distance<=mytrunc, na.rm=TRUE),3)`\% of all detections are in the first meter (the first `r round(100*1/45, 1)`% of the sampled strip).  This leads to a spike close to zero, which is difficult to fit.  There are three consequences:
+
+- contrary to the usual situation with line transect data where 25% of the uncertainty in the density estimate is attributable to uncertainty in the detection function, here `r round(100*(as.numeric(summary(m.pool.hr)$ds$average.p.se / summary(m.pool.hr)$ds$average.p))^2/m.pool.hr$dht$individuals$D$cv^2,1)`\% of the uncertainty comes from the detection function.
+
+## Comparison of overall estimates
+
+Bout-specific estimates of density are highly variably, with few detections in both June and September. Coefficients of variation for the July and August estimates are both >0.3.  
+- The point estimate of $\hat{D}$ for the analysis of the pooled data is `r round(m.pool.hr$dht$individuals$D$Estimate,3)` butterflies per ha.
+
