@@ -1,0 +1,178 @@
+---
+title: Ft Riley butterfly surveys
+description: |
+  Preliminary assessment of IMAP data from 2021 - Monarch
+author:
+  - name: Rexstad 
+    url: 
+    affiliation: CREEM Univ St Andrews
+    affiliation_url: https://www.creem.st-andrews.ac.uk/
+date: "`r Sys.Date()`"
+output: 
+  distill::distill_article:
+    toc: true
+    toc_depth: 1
+    toc_float: true
+---
+
+This exercises takes a first look at the 2021 Monarch butterfly survey.  We take an initial look at the distribution of distances and fit models to the data. The models examine whether detection functions differ between the four sampling bouts of the season.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+solution <- TRUE
+```
+
+Load the necessary packages
+
+```{r pkg}
+library(readxl)
+library(Distance)
+library(vioplot)
+library(plotrix)
+library(knitr)
+library(kableExtra)
+```
+
+
+# Acquire data
+
+```{r data}
+spreadsheet.monarch <- "IMAP Monarch Data_ALL.xlsx"
+monarch <- as.data.frame(read_xlsx(path=spreadsheet.monarch, sheet="Sheet1"))
+```
+
+# Some renaming of fields
+The `Distance` package is quite specific about the names associated with some elements of the data. For example, the field `observer` is specific to surveys that are conducted using multiple simultaneous observers to estimate detectability on the transect.  As this is not the case for this survey, rename that field to `obsname` to avoid difficulties.  I have also assigned the stratum identifier `Region.Label` to the sample bout, permitting easy estimation of bout-specific density.
+
+```{r rename}
+monarch$Area <- monarch$`Area (ha)`
+monarch$Sample.Label <- monarch$`Transect ID`
+monarch$Effort <- monarch$`Transect Length (m)`
+monarch$distance <- monarch$`Distance (m)`
+names(monarch)[9] <- "obsname"
+monarch$sample.bout <- monarch$`Sample Bout`
+monarch$Region.Label <- monarch$sample.bout
+```
+
+
+```{r units}
+bflyunits <- convert_units("meter", "meter", "hectare")
+```
+
+# Exploratory
+
+```{r explore, eval=solution}
+hist(monarch$distance, nc=50, xlab="Perpendicular distance", 
+     main="Monarch detections 2021 pooled across visits")
+```
+
+```{r exp2, eval=solution}
+obs <- unique(monarch$obsname)
+vioplot(distance~obsname, data=monarch, main="Detection distance distribution by observer")
+vioplot(distance~sample.bout, data=monarch, main="Detection distance distribution by bout")
+```
+```{r eda, eval=solution}
+b <- vector(mode="integer", length=4)
+b[1] <- sum(!is.na(monarch$distance[monarch$sample.bout==1]))
+b[2] <- sum(!is.na(monarch$distance[monarch$sample.bout==2]))
+b[3] <- sum(!is.na(monarch$distance[monarch$sample.bout==3]))
+b[4] <- sum(!is.na(monarch$distance[monarch$sample.bout==4]))
+kable(data.frame(numdetect=b), row.names = TRUE, caption="Detections by sampling bout.")  %>%
+  kable_paper(full_width=FALSE)
+```
+
+Note I have chosen a truncation distance just short of 60m.
+
+```{r firstfit, eval=solution}
+w <- vector("numeric", 2)
+p <- vector("numeric", 2)
+mytrunc <- 58
+monhn <- ds(data=monarch, key="hn", convert.units = bflyunits,
+            formula=~as.factor(sample.bout), truncation = mytrunc)
+hnfit <- gof_ds(monhn, plot=FALSE)$dsgof$CvM
+w[1] <- round(hnfit$W, 4)
+p[1] <- round(hnfit$p, 5)
+monhr <- ds(data=monarch, key="hr", convert.units = bflyunits,
+            formula=~as.factor(sample.bout), truncation = mytrunc)
+hrfit <- gof_ds(monhr, plot=FALSE)$dsgof$CvM
+w[2] <- round(hrfit$W, 4)
+p[2] <- round(hrfit$p, 5)
+
+kable(data.frame(w, p, row.names = c("Halfnorm", "Hazard")), row.names=TRUE,
+      caption="Cramer-von Mises goodness of fit for two key function models.") %>%
+    kable_paper(full_width=FALSE)
+summary(monhr$ddf)
+monhr.ests <- dht2(ddf=monhr, flatfile=monarch,
+                  strat_formula = ~as.factor(sample.bout), convert_units = bflyunits,
+                  stratification = "replicate")
+print(monhr.ests, report="density")
+```
+
+```{r hrboutplot, fig.cap="Hazard rate with bout-specific detection function.", eval=solution}
+visitplot <- function(dsobject) {
+# plots visit-specific detection functions
+  plot(dsobject, showpoints=FALSE, nc=40,
+       main="Detection function with visit as covariate")
+  add_df_covar_line(dsobject, data=data.frame(sample.bout=as.factor(1)), 
+                    lty=1, col="blue")
+  add_df_covar_line(dsobject, data=data.frame(sample.bout=as.factor(2)), 
+                    lty=1, col="green")
+  add_df_covar_line(dsobject, data=data.frame(sample.bout=as.factor(3)),
+                    lty=1, col="red")
+  add_df_covar_line(dsobject, data=data.frame(sample.bout=as.factor(4)),
+                    lty=1, col="purple")
+  legend("topright", lty=1, legend=c("Visit 1", "Visit 2", "Visit 3", "Visit 4"),
+         col=c("blue", "green", "red"))
+}
+visitplot(monhr)
+```
+
+# Pooled density analysis
+
+```{r pooled, eval=solution}
+#monarch$Effort <- monarch$Effort * length(unique(monarch$sample.bout))
+m.pool.hn <- ds(monarch, key="hn", convert.units = bflyunits, truncation = mytrunc)
+m.pool.hr <- ds(monarch, key="hr", convert.units = bflyunits, truncation = mytrunc)
+kable(summarize_ds_models(m.pool.hn, m.pool.hr)[,2:7], digits=4, row.names=FALSE)
+plot(m.pool.hr, nc=58)
+summary(m.pool.hr)
+```
+
+#  Does detectability differ between sampling bouts?
+
+AIC should provide an answer to this
+
+```{r aic, eval=solution}
+kable(summarize_ds_models(m.pool.hn, m.pool.hr, monhn, monhr)[,2:7], digits=4, row.names=FALSE)
+```
+
+# Bout-specific estimates under hazard rate models
+
+There appears to be little difference between the pooled and bout-specific detection function models.  Examine the point and interval estimates under each model:
+
+```{r twomodels, eval=solution}
+plotCI(1:4, monhr$dht$individuals$D$Estimate[1:4], li=monhr$dht$individuals$D$lcl[1:4],
+       ui=monhr$dht$individuals$D$ucl[1:4], main="2021 Monarch bout-specific densities",
+       xlab="Sampling bout", ylab="Density (per ha)", xlim=c(1, 4.5))
+plotCI(1:4+.2, m.pool.hr$dht$individuals$D$Estimate[1:4], li=m.pool.hr$dht$individuals$D$lcl[1:4],
+       ui=m.pool.hr$dht$individuals$D$ucl[1:4], add=TRUE, scol="blue", pt.bg = "blue")
+```
+
+# Comments
+
+## Spike on the transect
+Note the large proportion of detections in the first meter `r round(100*sum(monarch$distance<=1, na.rm=TRUE)/sum(monarch$distance<=mytrunc, na.rm=TRUE),3)`\% of all detections are in the first meter (the first 1.7% of the sampled strip).  This leads to a spike close to zero, which is difficult to fit.  There are three consequences:
+
+- there is great discrepancy in $\widehat{P_a}$ between the half normal key function and the hazard rate key function
+- the chosen (hazard rate model) predicts detectability falls off precipitously
+  - probability of detecting a butterfly at 7m is roughly 0.5 (for every butterfly detected at 7m, there is another undetected)
+    - in contrast, the half-normal key function predicts the 0.5 detection probability threshold is crossed at ~18m.  Field experience plays a role in assessing which model is most plausible.
+  - this results in $\widehat{P_a}$ being relatively small (`r round(m.pool.hr$ddf$fitted[1],3)`) and a subsequent large estimate of density ($\hat{D}=$ `r round(m.pool.hr$dht$individuals$D$Estimate[5], 3)` $\cdot ha^{-1}$)
+- contrary to the usual situation with line transect data where 25% of the uncertainty in the density estimate is attributable to uncertainty in the detection function, here `r round(100*(as.numeric(summary(m.pool.hr)$ds$average.p.se / summary(m.pool.hr)$ds$average.p))^2/m.pool.hr$dht$individuals$D$cv[5]^2,1)`\% of the uncertainty comes from the detection function.
+
+## Comparison of overall estimates
+
+Bout-specific estimates of density are highly variably, building to a crescendo in the September sample.  Except for the first bout, when <30 detections were made, the CV($\hat{D}$) remain reasonably constant.  
+
+- Combining those bout-specific density estimates into an overall estimate (that takes into account temporal variability) has a large CV($\hat{D}$) (`r round(monhr.ests$Abundance_CV[5],3)`).  
+- The point estimate of $\hat{D}$ for the analysis of the pooled data is similar, but more precise (CV=`r round(m.pool.hr$dht$individuals$D$cv[5],3)`), because temporal variability is not incorporated.

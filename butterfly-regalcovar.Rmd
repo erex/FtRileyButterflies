@@ -1,0 +1,143 @@
+---
+title: Ft Riley butterfly surveys
+description: |
+  Analysis of 2021 Regal survey assessing covariate effects
+author:
+  - name: Rexstad 
+    url: 
+    affiliation: CREEM Univ St Andrews
+    affiliation_url: https://www.creem.st-andrews.ac.uk/
+date: "`r Sys.Date()`"
+output: 
+  distill::distill_article:
+    toc: true
+    toc_depth: 1
+    toc_float: true
+---
+
+We renew our investigation of the Regal butterfly data now including potential covariates.  I've looked at only a subset of possible covariates.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+solution <- TRUE
+```
+
+Load necessary packages
+
+```{r pkgs}
+library(readxl)
+library(Distance)
+library(vioplot)
+library(knitr)
+library(kableExtra)
+```
+
+# Acquire data
+
+```{r data}
+spreadsheet.regal <- "IMAP Regal Data_ALL.xlsx"
+regal <- as.data.frame(read_xlsx(path=spreadsheet.regal, sheet="Sheet1"))
+```
+
+# Some renaming of fields
+
+The `Distance` package is quite specific about the names associated with some elements of the data. For example, the field `observer` is specific to surveys that are conducted using multiple simultaneous observers to estimate detectability on the transect.  As this is not the case for this survey, rename that field to `obsname` to avoid difficulties.
+
+```{r rename}
+regal$Region.Label <- regal$Region
+regal$Area <- regal$`Area (ha)`
+regal$Sample.Label <- regal$`Transect ID`
+regal$Effort <- regal$`Transect Length (m)`
+regal$distance <- regal$`Distance (m)`
+names(regal)[9] <- "obsname"
+regal$sample.bout <- regal$`Sample Bout`
+```
+
+Specify units used for various measurements: perpendicular distances, transect length and density estimates.
+
+```{r units}
+bflyunits <- convert_units("meter", "meter", "hectare")
+```
+
+---
+
+# Effect of covariates
+
+Restricting attention to the utility of covariates for the density estimate from the  detections pooled across sampling bouts. For illustration, I'll focus upon the hazard rate key function.  Before including in the detection function modelling, perform exploratory data analysis looking for patterns in the data.  Does there appear to be an effect of these upon the distribution of detectino distances?
+
+```{r boxplots, layout="l-body-outset", fig.width=7, fig.height=6, eval=solution}
+par(mfrow=c(2,2))
+a <- boxplot(regal$distance~regal$obsname)
+text(seq(1,length(a$n)), -1, a$n, cex=0.6)
+a <- boxplot(regal$distance~regal$Cloud)
+text(seq(1,length(a$n)), -1, a$n, cex=0.6)
+a <- boxplot(regal$distance~regal$Wind)
+text(seq(1,length(a$n)), -1, a$n, cex=0.6)
+a <- boxplot(regal$distance~as.factor(regal$Time %/% 100))
+text(seq(1,length(a$n)), -1, a$n, cex=0.6)
+par(mfrow=c(1,1))
+```
+
+You should form some conceptions of which covariates to include in the candidate model set based upon the exploratory data analysis above.  Proceeding as if all of the covariates were deemed worthy of inclusion in the candidate model set, fit some models (including those without truncation).
+
+```{r covariates, eval=solution}
+mytrunc <- 45
+regal$Effort <- regal$Effort * length(unique(regal$sample.bout))
+m.pool.hn <- ds(regal, key="hn", convert.units = bflyunits, truncation = mytrunc)
+m.pool.hr <- ds(regal, key="hr", convert.units = bflyunits, truncation = mytrunc)
+
+pool.hr.obs <- ds(regal, key="hr", convert.units = bflyunits, truncation = mytrunc,
+                  formula=~as.factor(obsname))
+pool.hr.cloud <- ds(regal, key="hr", convert.units = bflyunits, truncation = mytrunc,
+                    formula=~as.factor(Cloud))
+pool.hr.wind <- ds(regal, key="hr", convert.units = bflyunits, truncation = mytrunc,
+                   formula=~as.factor(Wind))
+pool.hr.time <- ds(regal, key="hr", convert.units = bflyunits, truncation = mytrunc,
+                   formula=~as.factor(Time %/% 100))
+kable(summarize_ds_models(m.pool.hr, pool.hr.obs, pool.hr.cloud, pool.hr.wind, pool.hr.time)[, 2:7],
+      row.names=FALSE, digits=4)
+```
+
+Take note of
+
+- goodness of fit of all models
+- estimates of $\widehat{P_a}$ of all models
+  - does anyone appear to be "odd one out"?
+
+Examine the model that is preferred according to AIC:
+
+```{r badcovar, eval=solution}
+summary(pool.hr.cloud$ddf)
+plot(pool.hr.cloud, nc=20, 
+     main="Detection function model\nwith Cloud covariate")
+```
+
+Before going any further, note the precision with which the parameters of the detection function for the `Cloud` model are estimated.
+
+Moving to a more plausible model, examine the model with `obsname` as a covariate.  Again note the precision with which the parameters of the detection function model are estimate.  What does this suggest about the strength of the `obsname` effect?
+
+```{r obsname, fig.cap="Plot of model with an observer covariate.", eval=solution}
+summary(pool.hr.obs)
+plot(pool.hr.obs, nc=20)
+add_df_covar_line(pool.hr.obs, data=data.frame(obsname="BDM"), col="blue")
+add_df_covar_line(pool.hr.obs, data=data.frame(obsname="KEM"), col="green")
+add_df_covar_line(pool.hr.obs, data=data.frame(obsname="ADT"), col="red")
+add_df_covar_line(pool.hr.obs, data=data.frame(obsname="CKS"), col="orange")
+```
+Remind yourself: how many detections did `MPH` make?
+
+
+```{r, estcomp, eval=solution}
+comp.ests <- rbind(m.pool.hr$dht$individuals$D, 
+                   pool.hr.cloud$dht$individuals$D,
+                   pool.hr.obs$dht$individuals$D,
+                   pool.hr.wind$dht$individuals$D,
+                   pool.hr.time$dht$individuals$D)
+comp.ests$Label <- c("No covar", "Cloud", "Obsname", "Wind", "Time")
+kable(comp.ests[1:6], digits=4, 
+      caption="Regal density estimates 2021 from models with and without covariates.  Note estimate precision from Cloud model.")
+```
+
+```{asis, echo=solution}
+The results in the previous table is common. Abnormal models aside, even if AIC suggests there to be an effect of covariates on detectability, it is unlikely to manifest itself in the density estimates.
+```
